@@ -27,7 +27,7 @@ class _OpenNotesAppState extends State<OpenNotesApp> {
   bool _isSyncEnabled = false;
   final GlobalKey<AnimatedListState> _listKey = GlobalKey<AnimatedListState>();
 
-  // Keys for persistence.
+  // Persistence keys
   final String _notesKey = 'notes';
   final String _themeKey = 'isLightTheme';
   final String _syncKey = 'syncEnabled';
@@ -67,9 +67,8 @@ class _OpenNotesAppState extends State<OpenNotesApp> {
     await prefs.setBool(_syncKey, _isSyncEnabled);
   }
 
-  // Called when the sync service receives a note list from a peer.
+  // Merge notes from a peer using union logic.
   void _handleSyncReceived(List<String> mergedNotes) {
-    // Merge with local notes (using a union to avoid duplicates).
     final currentSet = Set<String>.from(_notes);
     final mergedSet = Set<String>.from(mergedNotes);
     if (!setEquals(currentSet, mergedSet)) {
@@ -77,10 +76,12 @@ class _OpenNotesAppState extends State<OpenNotesApp> {
         _notes = mergedSet.toList();
       });
       _saveNotes();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Notes synchronized with network peers')),
+      );
     }
   }
 
-  // Start the sync service.
   Future<void> _startSync() async {
     if (_syncService != null) return;
     _syncService = SyncService(
@@ -88,15 +89,20 @@ class _OpenNotesAppState extends State<OpenNotesApp> {
       onSyncReceived: _handleSyncReceived,
     );
     await _syncService!.startService();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Network sync enabled')),
+    );
   }
 
-  // Stop the sync service.
   Future<void> _stopSync() async {
     await _syncService?.stopService();
     _syncService = null;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Network sync disabled')),
+    );
   }
 
-  // Opens the full-screen note editor. If [index] is null, a new note is created.
+  // Opens the note editor. If index is null, a new note is created.
   void _addOrEditNote({int? index}) async {
     String initialText = index == null ? '' : _notes[index];
     final result = await Navigator.push(
@@ -125,7 +131,6 @@ class _OpenNotesAppState extends State<OpenNotesApp> {
     }
   }
 
-  // Remove a note with animation.
   void _removeNote(int index) {
     String removedNote = _notes.removeAt(index);
     _listKey.currentState?.removeItem(
@@ -136,7 +141,6 @@ class _OpenNotesAppState extends State<OpenNotesApp> {
     _saveNotes();
   }
 
-  // Share a note via share_plus.
   void _shareNote(String noteText) {
     Share.share(noteText, subject: "My Note from OpenNotes");
   }
@@ -150,28 +154,21 @@ class _OpenNotesAppState extends State<OpenNotesApp> {
         brightness: Brightness.light,
         scaffoldBackgroundColor: const Color(0xFFF5F5F5),
         primarySwatch: Colors.blue,
-        // Light mode: card with a slight black tint and shadow.
         cardColor: Colors.black.withOpacity(0.1),
-        textTheme: const TextTheme(
-          bodyMedium: TextStyle(fontSize: 16),
-        ),
+        textTheme: const TextTheme(bodyMedium: TextStyle(fontSize: 16)),
       ),
       darkTheme: ThemeData(
         brightness: Brightness.dark,
         scaffoldBackgroundColor: const Color(0xFF1E1E1E),
         primarySwatch: Colors.blue,
-        // Dark mode: card with a slight white tint.
         cardColor: Colors.white.withOpacity(0.1),
-        textTheme: const TextTheme(
-          bodyMedium: TextStyle(fontSize: 16),
-        ),
+        textTheme: const TextTheme(bodyMedium: TextStyle(fontSize: 16)),
       ),
       themeMode: _isLightTheme ? ThemeMode.light : ThemeMode.dark,
       home: Scaffold(
         appBar: AppBar(
           title: const Text("OpenNotes"),
           actions: [
-            if (_notes.isNotEmpty)
               IconButton(
                 icon: const Icon(Icons.add),
                 onPressed: () => _addOrEditNote(),
@@ -205,7 +202,6 @@ class _OpenNotesAppState extends State<OpenNotesApp> {
     );
   }
 
-  // Displayed when there are no notes.
   Widget _buildEmptyState() {
     return Center(
       child: Column(
@@ -225,9 +221,7 @@ class _OpenNotesAppState extends State<OpenNotesApp> {
     );
   }
 
-  // Builds an animated card for each note with Markdown rendering (including embeds).
-  Widget _buildNoteCard(
-      String noteText, Animation<double> animation, int index) {
+  Widget _buildNoteCard(String noteText, Animation<double> animation, int index) {
     final int elevation = _isLightTheme ? 4 : 0;
     return SizeTransition(
       sizeFactor: animation,
@@ -242,7 +236,6 @@ class _OpenNotesAppState extends State<OpenNotesApp> {
           title: MarkdownBody(
             data: noteText,
             styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)),
-            // Add the embed custom syntax and builder.
             inlineSyntaxes: [EmbedSyntax()],
             builders: {'embed': EmbedBuilder()},
           ),
@@ -266,11 +259,10 @@ class _OpenNotesAppState extends State<OpenNotesApp> {
     );
   }
 
-  // Shows the settings panel, including theme selection and sync toggle.
   void _showSettings() {
     showModalBottomSheet(
       context: context,
-      builder: (BuildContext context) {
+      builder: (BuildContext bottomSheetContext) {
         return Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
@@ -298,33 +290,32 @@ class _OpenNotesAppState extends State<OpenNotesApp> {
                           _isLightTheme = value;
                         });
                         _saveTheme();
-                        Navigator.pop(context);
+                        Navigator.pop(bottomSheetContext);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Theme updated')),
+                        );
                       }
                     },
                   ),
                 ],
               ),
               const SizedBox(height: 16),
-              Row(
-                children: [
-                  const Expanded(
-                      child: Text("Sync across network:",
-                          style: TextStyle(fontSize: 16))),
-                  Switch(
-                    value: _isSyncEnabled,
-                    onChanged: (bool value) async {
-                      setState(() {
-                        _isSyncEnabled = value;
-                      });
-                      await _saveSyncPref();
-                      if (value) {
-                        _startSync();
-                      } else {
-                        _stopSync();
-                      }
-                    },
-                  )
-                ],
+              SwitchListTile(
+                dense: true,
+                title: const Text("Sync across network", style: TextStyle(fontSize: 16)),
+                value: _isSyncEnabled,
+                onChanged: (bool value) async {
+                  setState(() {
+                    _isSyncEnabled = value;
+                  });
+                  await _saveSyncPref();
+                  if (value) {
+                    await _startSync();
+                  } else {
+                    await _stopSync();
+                  }
+                  Navigator.pop(bottomSheetContext);
+                },
               ),
             ],
           ),
@@ -334,17 +325,16 @@ class _OpenNotesAppState extends State<OpenNotesApp> {
   }
 }
 
-/// Helper to compare two sets.
+/// Helper function to check if two sets are equal.
 bool setEquals(Set<String> a, Set<String> b) {
   if (a.length != b.length) return false;
   return a.difference(b).isEmpty;
 }
 
-/// -----------------------------------------------------------------
+/// ----------------------------
 ///
-/// The SyncService starts a TCP server and UDP broadcaster to sync
-/// notes across devices on the same network. It uses a simple JSON
-/// protocol so that all connected OpenNotes apps exchange updated notes.
+/// SyncService: starts a TCP server and UDP broadcaster
+/// to synchronize notes across devices on the same network.
 ///
 class SyncService {
   final List<String> Function() getLocalNotes;
@@ -363,7 +353,7 @@ class SyncService {
   Future<void> startService() async {
     _running = true;
 
-    // Start TCP server on port 4040.
+    // Start a TCP server on port 4040.
     _serverSocket = await ServerSocket.bind(InternetAddress.anyIPv4, 4040);
     _serverSocket!.listen((Socket client) {
       final data = {'notes': getLocalNotes()};
@@ -371,7 +361,7 @@ class SyncService {
       client.close();
     });
 
-    // Bind a UDP socket for broadcast.
+    // Bind a UDP socket for broadcasting.
     _udpSocket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 4040);
     _udpSocket!.broadcastEnabled = true;
     _udpSocket!.listen((RawSocketEvent event) {
@@ -380,7 +370,7 @@ class SyncService {
         if (datagram != null) {
           final message = String.fromCharCodes(datagram.data);
           if (message.startsWith("OPENNOTES_SYNC")) {
-            // Avoid connecting to self (loopback).
+            // Avoid connecting to self.
             if (datagram.address.address != InternetAddress.loopbackIPv4.address) {
               _connectToPeer(datagram.address, 4040);
             }
@@ -389,7 +379,7 @@ class SyncService {
       }
     });
 
-    // Every 5 seconds, broadcast our presence.
+    // Periodically broadcast a presence signal.
     _broadcastTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
       if (!_running) {
         timer.cancel();
@@ -403,8 +393,8 @@ class SyncService {
 
   void _connectToPeer(InternetAddress address, int port) async {
     try {
-      Socket socket =
-          await Socket.connect(address, port, timeout: const Duration(seconds: 3));
+      Socket socket = await Socket.connect(address, port,
+          timeout: const Duration(seconds: 3));
       final StringBuffer buffer = StringBuffer();
       socket.listen((data) {
         buffer.write(String.fromCharCodes(data));
@@ -413,19 +403,18 @@ class SyncService {
           final jsonData = convert.jsonDecode(buffer.toString());
           if (jsonData['notes'] is List) {
             List<dynamic> receivedNotes = jsonData['notes'];
-            List<String> notesFromPeer =
-                receivedNotes.map((e) => e.toString()).toList();
+            List<String> notesFromPeer = receivedNotes.map((e) => e.toString()).toList();
             List<String> currentNotes = getLocalNotes();
             List<String> merged = {...currentNotes, ...notesFromPeer}.toList();
             onSyncReceived(merged);
           }
         } catch (e) {
-          // Parsing error: ignore
+          // Parsing error; ignore.
         }
         socket.destroy();
       });
     } catch (e) {
-      // Connection error; ignore gracefully.
+      // Connection error; ignore.
     }
   }
 
@@ -437,16 +426,14 @@ class SyncService {
   }
 }
 
-/// -----------------------------------------------------------------
+/// ----------------------------
 ///
-/// Embed Support:
-///
-/// To support embeds, we define a custom inline syntax and builder
-/// for our Markdown parser. When a note contains a tag of the form:
+/// Embed support: custom inline syntax and builder.
+/// When a note contains text like:
 ///
 ///   {{embed:https://example.com}}
 ///
-/// It will be captured by [EmbedSyntax] and rendered using [EmbedBuilder].
+/// it is rendered as a tappable embed card.
 ///
 class EmbedSyntax extends md.InlineSyntax {
   // Matches {{embed:some_url}}
@@ -480,14 +467,13 @@ class EmbedBuilder extends MarkdownElementBuilder {
           borderRadius: BorderRadius.circular(8.0),
         ),
         child: Row(
-          children: const [
-            Icon(Icons.link, color: Colors.blueAccent),
-            SizedBox(width: 8.0),
+          children: [
+            const Icon(Icons.link, color: Colors.blueAccent),
+            const SizedBox(width: 8.0),
             Expanded(
               child: Text(
-                // The URL will appear here.
-                "",
-                style: TextStyle(
+                url,
+                style: const TextStyle(
                   color: Colors.blueAccent,
                   decoration: TextDecoration.underline,
                 ),
@@ -498,27 +484,13 @@ class EmbedBuilder extends MarkdownElementBuilder {
       ),
     );
   }
-
-  @override
-  Widget? visitText(md.Text text, TextStyle? preferredStyle) {
-    // When building the embed, replace the text widget with the URL text.
-    return Text(
-      text.text,
-      style: const TextStyle(
-        color: Colors.blueAccent,
-        decoration: TextDecoration.underline,
-      ),
-    );
-  }
 }
 
-/// -----------------------------------------------------------------
+/// ----------------------------
 ///
-/// Note Editor:
-///
-/// A full-screen note editor that supports both raw text entry (with
-/// Unicode and Markdown) and a live Markdown preview. Users can embed
-/// links using the special syntax shown above.
+/// Note Editor: full-screen modal for editing notes with two tabs:
+/// one for editing text (supporting Markdown and Unicode) and one
+/// for live Markdown preview (including embed rendering).
 ///
 class NoteEditorResult {
   final String noteText;
@@ -551,15 +523,13 @@ class _NoteEditorState extends State<NoteEditor> {
     super.dispose();
   }
 
-  // Confirm deletion with an AlertDialog.
   Future<bool> _confirmDeletion() async {
     return await showDialog<bool>(
           context: context,
           builder: (BuildContext context) {
             return AlertDialog(
               title: const Text("Delete Note"),
-              content:
-                  const Text("Are you sure you want to delete this note?"),
+              content: const Text("Are you sure you want to delete this note?"),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context, false),
@@ -591,11 +561,7 @@ class _NoteEditorState extends State<NoteEditor> {
                   final bool confirmed = await _confirmDeletion();
                   if (confirmed) {
                     Navigator.pop(
-                        context,
-                        NoteEditorResult(
-                          noteText: '',
-                          deleted: true,
-                        ));
+                        context, NoteEditorResult(noteText: '', deleted: true));
                   }
                 },
                 tooltip: 'Delete Note',
@@ -604,9 +570,7 @@ class _NoteEditorState extends State<NoteEditor> {
               icon: const Icon(Icons.check),
               onPressed: () {
                 Navigator.pop(
-                    context,
-                    NoteEditorResult(
-                        noteText: _controller.text));
+                    context, NoteEditorResult(noteText: _controller.text));
               },
               tooltip: 'Save Note',
             ),
@@ -620,7 +584,6 @@ class _NoteEditorState extends State<NoteEditor> {
         ),
         body: TabBarView(
           children: [
-            // Edit tab with a multi-line text field.
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: TextField(
@@ -628,13 +591,11 @@ class _NoteEditorState extends State<NoteEditor> {
                 autofocus: true,
                 maxLines: null,
                 decoration: const InputDecoration(
-                  hintText:
-                      "Enter your note here (supports Markdown, Unicode & embeds)...",
+                  hintText: "Enter your note here (supports Markdown, Unicode & embeds)...",
                   border: OutlineInputBorder(),
                 ),
               ),
             ),
-            // Preview tab that renders Markdown live (with embed support).
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: ValueListenableBuilder<TextEditingValue>(
